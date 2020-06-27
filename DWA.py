@@ -5,6 +5,25 @@ import numpy as np
 from Simulator import decode_state, encode_state
 from utils import SPD, YAWSPD
 
+c_u1p = 7.9283e-04  # [/kg]
+c_u1r = 4.5455e-04  # [/kg]
+c_u1l = 4.2284e-04  # [/kg]
+c_u2 = 6.3397  # n/a
+c_u3 = 3.3827  # [m]
+c_u4 = -0.1357  # [/m]
+c_v1r = -9.7660e-05  # [kg]
+c_v1l = -6.5107e-05  # [kg]
+c_v2 = 2.4774  # [/m]
+c_v3 = 1.5808  # n/a
+c_v4 = -1.9095  # [/m]
+c_v5 = 0.0618  # [m]
+c_r1r = 1.8303e-04  # [/kg]
+c_r1l = 1.2202e-04  # [/kg]
+c_r2 = -5.1488  # [/m]
+c_r3 = -3.2684  # n/a
+c_r4 = 2.2485  # [/m]
+c_r5 = -0.2510  # [m]
+
 
 class DWA(object):
     def __init__(self, config):
@@ -22,21 +41,19 @@ class DWA(object):
         u0 = accel
         v0 = 0  # Assume that the ship's lateral velocity is always 0
         r0 = r_accel
-        left = self.config.left_max / 60
-        right = self.config.right_max / 60
-
+        X_prop = self.config.Xprop_max
+        X_l = self.config.Xl_max
+        X_r = -X_l
         # It is considered that the acceleration is the highest when the propeller speed is the highest
-        du_max = (-6.7 * u0 ** 2 + 15.9 * r0 ** 2 + 0.01205 * (left ** 2 + right ** 2) - 0.0644 * (
-            u0 * (left + right) + 0.45 * r0 * (left - right)) + 58 * r0 * v0) / 33.3
+        du_max = c_u1p * X_prop + c_u1r * X_r + c_u1l * X_l + c_u2 * v0 * r0 + c_u3 * r0 ** 2 + c_u4 * u0 * abs(u0)
+        dv = c_v1r * X_r - c_v1l * X_l + c_v2 * abs(u0) * v0 + c_v3 * abs(u0) * r0 + c_v4 * v0 * abs(
+            v0) + c_v5 * r0 * abs(r0)
 
         # It is considered that the angular acceleration is maximum when
         # only one side of the propeller rotates at the highest speed.
         # In order to be close to reality, reduce the maximum speed
-        left = 1000 / 60
-        right = 0
-        dr_max = (-0.17 * v0 - 2.74 * r0 - 4.78 * r0 * abs(r0) + 0.45 * (
-            0.01205 * (left ** 2 - right ** 2) - 0.0644 * (
-                u0 * (left - right) + 0.45 * r0 * (left + right)))) / 6.1
+        dr_max = c_r1r * X_r + -c_r1l * X_l + c_r2 * u0 * abs(v0) + c_r3 * abs(u0) * r0 + c_r4 * v0 * abs(
+            v0) + c_r5 * r0 * abs(r0)
         return du_max, abs(dr_max)
 
     def calc_final_input(self, x, u, dw, goal, ob):

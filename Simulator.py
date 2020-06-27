@@ -77,7 +77,8 @@ c_r4 = 2.2485  # [/m]
 c_r5 = -0.2510  # [m]
 
 
-def AUV_mode(state, X_prop, X_r, X_l, dt):
+def AUV_model(state, X_prop, X_l, dt):
+    X_r = -X_l
     # Global frame
     X0 = state[POSX]  # x coordinate[m]
     Y0 = state[POSY]  # y coordinate[m]
@@ -90,12 +91,9 @@ def AUV_mode(state, X_prop, X_r, X_l, dt):
     u0 = V0 * sin(phi0) + U0 * cos(phi0)  # longitudinal velocity
     v0 = V0 * cos(phi0) - U0 * sin(phi0)  # transverse velocity
 
-    du = c_u1p * X_prop + c_u1r * X_r + c_u1l * X_l + \
-         c_u2 * v0 * r0 + c_u3 * r0 ^ 2 + c_u4 * u0 * abs(u0)
-    dv = c_v1r * X_r - c_v1l * X_l + c_v2 * abs(u0) * v0 + \
-         c_v3 * abs(u0) * r0 + c_v4 * v0 * abs(v0) + c_v5 * r0 * abs(r0)
-    dr = c_r1r * X_r + -c_r1l * X_l + c_r2 * u0 * abs(v0) + \
-         c_r3 * abs(u0) * r0 + c_r4 * v0 * abs(v0) + c_r5 * r0 * abs(r0)
+    du = c_u1p * X_prop + c_u1r * X_r + c_u1l * X_l + c_u2 * v0 * r0 + c_u3 * r0 ** 2 + c_u4 * u0 * abs(u0)
+    dv = c_v1r * X_r - c_v1l * X_l + c_v2 * abs(u0) * v0 + c_v3 * abs(u0) * r0 + c_v4 * v0 * abs(v0) + c_v5 * r0 * abs(r0)
+    dr = c_r1r * X_r + -c_r1l * X_l + c_r2 * u0 * abs(v0) + c_r3 * abs(u0) * r0 + c_r4 * v0 * abs(v0) + c_r5 * r0 * abs(r0)
 
     u = u0 + du * dt
     v = v0 + dv * dt

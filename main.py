@@ -2,12 +2,15 @@ import time
 from math import atan2, pi
 import numpy as np
 
-from msgdev import PeriodTimer
+from msgdev import PeriodTimer, MsgDevice
 from PID import PID, PID_angle
-from Simulator import trimaran_model, apply_noise, update_obstacle
-from utils import plot, POSX, POSY
+from Simulator import trimaran_model, apply_noise, update_obstacle, AUV_model
+from utils import plot, POSX, POSY, plot2
 from RRTstar import RRTStar
 from DWA import DWA
+
+
+
 # Visulization
 show_animation = True
 show_result = True
@@ -19,34 +22,46 @@ YAW:\t real {real_yaw:.2f} | target {target_yaw:.2f}\n\
 YAWSPD:\t real {real_yawspd:.2f} | target {target_yawspd:.2f}\n\
 Average Output:\t\t{average_output:.2f}\n\
 Diff Output:\t{output_diff:.2f}\n\
-Motor:\tleft {left:.2f} | right {right:.2f}\n\
 Calc Time:\t {calc_time:.4f}\n\
 ==================="
 
-# propeller parameter
-rpm_normal_left = [800, 1200, 1400]
-rpm_normal_right = [850, 1250, 1450]
-rpm_max = 1500
 
+class Interface_rec(object):
+    def __init__(self, sub_addr, pose_port):
+        self.dev = MsgDevice()
+        self.dev.open()
+        self.dev.sub_connect(sub_addr + ':' + pose_port)
+        self.dev.sub_add_url('posx')
+        self.dev.sub_add_url('posy')
+        self.dev.sub_add_url('speed')
+        self.dev.sub_add_url('speed_tar')
+        self.dev.sub_add_url('yaw')
+        self.dev.sub_add_url('yaw_tar')
+        self.dev.sub_add_url('yawspd')
+        self.dev.sub_add_url('yawspd_tar')
 
-def rpm_limit(rpm):
-    if rpm > rpm_max:
-        return rpm_max
-    elif rpm < -rpm_max:
-        return -rpm_max
-    else:
-        return rpm
+    def receive(self, *args):
+        data = []
+        for i in args:
+            data.append(self.dev.sub_get1(i))
+        return data
+
+def auv_initialize():
+    local_addr = 'tcp://127.0.0.1'
+    self_port = '55204'
+    auv = Interface_rec(local_addr, self_port)
+    return auv
 
 
 # simulation parameters
 class ConfigDWA:
     def __init__(self):
         # robot parameter
-        self.max_speed = 1.0  # maximal sailing velocity[m/s]
+        self.max_speed = 1.5  # maximal sailing velocity[m/s]
         self.min_speed = 0  # maximal astern velocity[m/s]
-        self.max_yawrate = 0.6  # maximal yaw angle velocity[rad/s]
+        self.max_yawrate = 0.1  # maximal yaw angle velocity[rad/s]
         self.v_reso = 0.1  # [m/s]
-        self.yawrate_reso = 6 * pi / 180.0  # [rad/s]
+        self.yawrate_reso = pi / 180.0  # [rad/s]
 
         self.dT = 1.0  # dynamic window time[s]
         self.dt = 0.1  # Trajectory inference time step[s]
@@ -58,8 +73,8 @@ class ConfigDWA:
         self.robot_radius = 3  # [m]
         self.robot_radius_square = self.robot_radius ** 2  # [m]
 
-        self.left_max = 1500
-        self.right_max = 1500
+        self.Xprop_max = 500
+        self.Xl_max = 1500
 
 
 def pure_pursuit(self, target):
@@ -79,6 +94,10 @@ def get_nearest_path_index(path, state):
 
 
 def main():
+    # auv = auv_initialize()
+    auv = MsgDevice()
+    auv.open()
+    auv.pub_bind('tcp://0.0.0.0:55004')
 
     # Pure Pursuit initialize
     target_angle = 0
@@ -87,7 +106,8 @@ def main():
     configDWA = ConfigDWA()
     dynamic_window = DWA(configDWA)
     # initial state [x(m), y(m), yaw(rad), speed(m/s), yaw_speed(rad/s)]
-    init_state = np.array([0, 10, 45 * pi / 180, 0.0, 0.0])
+    # init_state = np.array([0, 10, 45 * pi / 180, 0.0, 0.0])
+    init_state = np.array([0, 0, 0, 0.0, 0.0])
     # goal position [x(m), y(m)]
     predefined_goal = np.array([90.0, 80.0])
     goal = predefined_goal
@@ -124,20 +144,20 @@ def main():
                        expand_dis=5.0,
                        path_resolution=1.0,
                        goal_sample_rate=10,
-                       max_iter=1000,
+                       max_iter=100,
                        connect_circle_dist=50.0)
-    path = rrt_star.planning(animation=True, search_until_max_iter=True)
-    path_index = -1
-    localgoal = path[path_index]
-    time.sleep(3)
+    # path = rrt_star.planning(animation=True, search_until_max_iter=True)
+    # path_index = -1
+    # localgoal = path[path_index]
+    # time.sleep(3)
     traj = [init_state]
     best_traj = None
     state = init_state
 
     interval = 0.1  # Simulation time step
-    pid_spd = PID(kp=3000.0, ki=100.0, kd=0, minout=0, maxout=2000, sampleTime=0.1)
-    pid_yawspd = PID(kp=5000, ki=10.0, kd=0, minout=-1200, maxout=1200, sampleTime=interval)
-    pid_yaw = PID_angle(kp=800, ki=3, kd=10, minout=-1200, maxout=1200, sampleTime=interval)
+    pid_spd = PID(kp=2500.0, ki=100.0, kd=0, minout=-1000, maxout=1000, sampleTime=interval)
+    pid_yawspd = PID(kp=15000, ki=500.0, kd=10, minout=-1500, maxout=1500, sampleTime=interval)
+    pid_yaw = PID_angle(kp=800, ki=3, kd=10, minout=-1500, maxout=1500, sampleTime=interval)
     t = PeriodTimer(interval)
     t.start()
     i = 0
@@ -159,15 +179,16 @@ def main():
                     if dist < min_dist:
                         min_dist = dist
 
-                to_localgoal_dist_square = (state[POSX] - localgoal[0]) ** 2 + (state[POSY] - localgoal[1]) ** 2
-                if to_localgoal_dist_square <= configDWA.robot_radius_square:
-                    path_index -= 1
-                if abs(path_index) < len(path):
-                    localgoal = path[path_index]
-                else:
-                    localgoal = goal
+                # to_localgoal_dist_square = (state[POSX] - localgoal[0]) ** 2 + (state[POSY] - localgoal[1]) ** 2
+                # if to_localgoal_dist_square <= configDWA.robot_radius_square:
+                #     path_index -= 1
+                # if abs(path_index) < len(path):
+                #     localgoal = path[path_index]
+                # else:
+                #     localgoal = goal
 
-                if min_dist > 8 ** 2:
+                # if min_dist > 8 ** 2:
+                if 0:
                     best_traj =None
                     target_angle, dist = pure_pursuit(state, localgoal)
                     if target_angle > pi:
@@ -188,7 +209,7 @@ def main():
                     print('Pure Pursuit, Current path point: ', -path_index, "/", len(path))
                 else:
                     u, best_traj = dynamic_window.update(state, u, goal, obstacle)
-
+                    u = [1, 0.1]
                     # Forward velocity
                     average = pid_spd.compute(state[3], u[0])
                     average = 0 if abs(average) < 5 else average
@@ -197,14 +218,10 @@ def main():
                     diff = 0 if abs(diff) < 5 else diff
                     print('Dynamic Window Approach')
                     # which path point to follow when switch to the pure pursuit
-                    path_index = get_nearest_path_index(path, state)-len(path)
+                    # path_index = get_nearest_path_index(path, state)-len(path)
                     if min_dist < 3 ** 2:
                         print('Collision!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
-                left, right = average + diff/2, average - diff/2
-
-                left_motor = -max(min(left, 1500), 0)
-                right_motor = max(min(right, 1500), 0)
 
                 print(info_format.format(
                     i=i,
@@ -216,14 +233,13 @@ def main():
                     target_yawspd=u[1],
                     average_output=average,
                     output_diff=diff,
-                    left=left_motor,
-                    right=right_motor,
                     calc_time=time.perf_counter() - start_time
                 ))
 
                 if show_animation:
                     traj.append(state.copy())
-                    plot(best_traj, state, goal, obstacle, path, traj)
+                    # plot(best_traj, state, goal, obstacle, path, traj)
+                    plot2(best_traj, state, goal, obstacle, traj)
 
                 to_goal_dist_square = (state[POSX] - goal[0]) ** 2 + (state[POSY] - goal[1]) ** 2
                 if to_goal_dist_square <= configDWA.robot_radius_square:
@@ -232,14 +248,31 @@ def main():
                     break
 
                 # Simulation
-                state = trimaran_model(state, left, right, interval)
+                # state = trimaran_model(state, left, right, interval)
+                state = AUV_model(state, average, -diff, interval)
                 state = apply_noise(state)
                 moving_obstacles = update_obstacle(moving_obstacles, interval)
+
+                auv.pub_set1('posx', state[0])
+                auv.pub_set1('posy', state[1])
+                auv.pub_set1('speed', state[3])
+                auv.pub_set1('yaw', state[2])
+                auv.pub_set1('yawspd', state[4])
+                auv.pub_set1('speed_tar', u[0])
+                auv.pub_set1('yaw_tar', target_angle)
+                auv.pub_set1('yawspd_tar', u[1])
 
     finally:
         time.sleep(interval)
         print('everything closed')
 
+from collections import deque
+
+POSX = 0
+POSY = 1
+YAW = 2
+SPD = 3
+YAWSPD = 4
 
 if __name__ == "__main__":
 
@@ -247,10 +280,10 @@ if __name__ == "__main__":
     main()
 
     # # Calculate maximum acceleration and velocity based on mathematical model
-    # init_state = [0,0,0,0,0]
+    # init_state = [0, 0, 0, 0, 0]
     # x = init_state
-    # left = 1500
-    # right = 1500
+    # X_prop = 500
+    # X_l = 2000
     # cnt = 0
     # flag = 0
     # spd_rec = deque(maxlen=2)
@@ -263,7 +296,8 @@ if __name__ == "__main__":
     # t.start()
     # while True:
     #     with t:
-    #         x = trimaran_model(x, left, right, interval)
+    #         # x = trimaran_model(x, left, right, interval)
+    #         x = AUV_model(x, X_prop, X_l, interval)
     #         cnt += 1
     #         if cnt == calc_interval / interval:
     #             cnt = 0
