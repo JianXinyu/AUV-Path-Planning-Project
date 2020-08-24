@@ -4,7 +4,7 @@ import numpy as np
 
 from msgdev import PeriodTimer, MsgDevice
 from PID import PID, PID_angle
-from Simulator import trimaran_model, apply_noise, update_obstacle, AUV_model
+from Simulator import apply_noise, update_obstacle, AUV_model
 from utils import plot, POSX, POSY, plot2
 from RRTstar import RRTStar
 from DWA import DWA
